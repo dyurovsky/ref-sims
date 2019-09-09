@@ -16,7 +16,10 @@ ui <- fluidPage(
                        selected = "teach"),
     uiOutput("learningParameter"),
     uiOutput("pointCost"),
-    uiOutput("speakCost")),
+    uiOutput("speakCost"),
+    uiOutput("nguesses"),
+    uiOutput("C"),
+    uiOutput("M")),
     
     mainPanel(
       tabsetPanel(id = "plotSelector",

@@ -312,35 +312,6 @@ generate_propose_stims <- function(C = 4, M = 16, n = 100) {
     bind_rows(tibble(trial = 1:n, object = 1))
 }
 
-propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100) {
-  stims <- generate_propose_stims(C, M, n)
-  
-  guess <- 0
-  trial <- 0
-  
-  for(i in 1:n) {
-    if(guess == 1) {
-      trial <- i - 1
-      break
-    }
-    
-    trial_stims <- stims %>%
-      filter(trial == i) %>%
-      pull(object)
-    
-    if(!guess %in% trial_stims) {
-      selected <- sample(trial_stims, 1)
-      if(rbinom(1, 1, p))
-        guess <- selected
-      else
-        guess <- 0
-    }
-    
-  }
-  
-  return(trial)
-}
-
 propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100, 
                                         nguesses = 4) {
   stims <- generate_propose_stims(C, M, n)
@@ -385,30 +356,30 @@ pbv_samples <- function(reps = 1000, p = .6, C = 4, M = 16, n = 100,
   replicate(reps, propose_but_verify(p, C, M, n, nguesses)) %>%
     enframe() %>%
     select(-name) %>%
-    mutate(p = p) %>%
+    mutate(p = p, C = C, M = M, nguesses = nguesses) %>%
     rename(n = value)
 }
 
-pbv_props_4 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 4)) %>%
-  bind_rows() %>%
-  group_by(p, n) %>%
-  summarise(prob = n()) %>%
-  complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
-  arrange(p, n) %>%
-  mutate(prob = prob/sum(prob)) %>%
-  mutate(prob = cumsum(prob)) 
-
-
-pbv_props_1 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 1)) %>%
-  bind_rows() %>%
-  group_by(p, n) %>%
-  summarise(prob = n()) %>%
-  complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
-  arrange(p, n) %>%
-  mutate(prob = prob/sum(prob)) %>%
-  mutate(prob = cumsum(prob)) 
-
-AUC(pbv_props_1$prob, pbv_props_4)
+# pbv_props_4 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 4)) %>%
+#   bind_rows() %>%
+#   group_by(p, n) %>%
+#   summarise(prob = n()) %>%
+#   complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
+#   arrange(p, n) %>%
+#   mutate(prob = prob/sum(prob)) %>%
+#   mutate(prob = cumsum(prob)) 
+# 
+# 
+# pbv_props_1 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 1)) %>%
+#   bind_rows() %>%
+#   group_by(p, n) %>%
+#   summarise(prob = n()) %>%
+#   complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
+#   arrange(p, n) %>%
+#   mutate(prob = prob/sum(prob)) %>%
+#   mutate(prob = cumsum(prob)) 
+# 
+# AUC(pbv_props_1$prob, pbv_props_4)
 
 all_pbv_props <- pbv_props_1 %>%
   mutate(nguesses = 1) %>%
@@ -418,7 +389,36 @@ ggplot(all_pbv_props, aes(x = n, y = prob, color = as.factor(p))) +
   geom_line(aes(linetype = as.factor(nguesses))) + 
   scale_color_brewer(palette = "Set1")
 
-ggsave("pbvs.pdf")
+```
+
+```{r pbv_cache}
+pbv_combos <- expand.grid(p = seq(.1, 1, .2), C = c(1, 2, 4), 
+                          nguesses = c(1, 2, 4), 
+                          M = c(16, 32)) %>%
+  filter(nguesses <= C) %>%
+  as_tibble()
+        
+pbv_props <- map_df(1:nrow(pbv_combos), 
+                    ~pbv_samples(p = pbv_combos %>% slice(.x) %>% pull(p), 
+                                 C = pbv_combos %>% slice(.x) %>% pull(C),
+                                 M = pbv_combos %>% slice(.x) %>% pull(M),
+                                 nguesses = pbv_combos %>% slice(.x) %>%
+                                   pull(nguesses))) %>%
+  mutate(p = as.numeric(as.character(p))) %>%
+  group_by(M, C, nguesses, p, n) %>%
+  summarise(prob = n()) %>%
+  complete(n = full_seq(1:100, 1), p, M, C, nguesses, fill = list(prob =0)) %>%
+  arrange(M, C, nguesses, p, n) %>%
+  mutate(prob = prob/sum(prob),
+         prob = cumsum(prob)) %>%
+  rename(trial = n)
+
+pbv_aucs <- pbv_props %>%
+  group_by(M, C, nguesses, p) %>%
+  summarise(auc = AUC(trial, prob))
+
+write_csv(pbv_props, here("cached_data/pbv_props.csv"))
+write_csv(pbv_aucs, here("cached_data/pbv_aucs.csv"))
 ```
 
 ```{r plot}
