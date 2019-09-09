@@ -295,7 +295,7 @@ com_props <- map_df(1:nrow(combos),
 
 com_aucs <- com_props %>%
   filter(trial != 0) %>%
-  group_by(p) %>%
+  group_by(p, P, S) %>%
   summarise(auc = AUC(trial, prob))
 
 write_csv(com_props, here("cached_data/com_props.csv"))

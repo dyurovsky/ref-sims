@@ -15,10 +15,14 @@ ui <- fluidPage(
                                    "Propose but Verify" = "pbv"),
                        selected = "teach"),
     uiOutput("learningParameter"),
-    uiOutput("comParameters")),
+    uiOutput("pointCost"),
+    uiOutput("speakCost")),
     
     mainPanel(
-      plotOutput("learnPlot")
+      tabsetPanel(id = "plotSelector",
+                  tabPanel("Learning", plotOutput("learnPlot")),
+                  tabPanel("AUC", plotOutput("aucPlot")))
+      
     )
   )
 )
