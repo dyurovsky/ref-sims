@@ -5,7 +5,7 @@ library(directlabels)
 library(forcats)
 library(DescTools)
 
-LOCAL <- TRUE
+LOCAL <- FALSE
 
 if(LOCAL) {
   teach_props <- read_csv(here("cached_data/teach_props.csv"))
