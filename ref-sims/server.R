@@ -3,28 +3,20 @@ library(ggthemes)
 library(here)
 library(directlabels)
 library(forcats)
+library(DescTools)
 
-LOCAL <- FALSE
+LOCAL <- TRUE
 
 if(LOCAL) {
   teach_props <- read_csv(here("cached_data/teach_props.csv"))
-  teach_aucs <- read_csv(here("cached_data/teach_aucs.csv"))
-   
   com_props <- read_csv(here("cached_data/com_props.csv"))
-  com_aucs <- read_csv(here("cached_data/com_aucs.csv"))
-  
   pbv_props <- read_csv(here("cached_data/pbv_props.csv"))
-  pbv_aucs <- read_csv(here("cached_data/pbv_aucs.csv"))
+
   
 } else{
   teach_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/teach_props.csv")
-  teach_aucs <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/teach_aucs.csv")
-  
   com_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/com_props.csv")
-  com_aucs <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/com_aucs.csv")
-  
   pbv_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/pbv_props.csv")
-  pbv_aucs <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/pbv_aucs.csv")
 }
 
 com_params <- com_props %>%
@@ -39,15 +31,16 @@ all_models <- mutate(teach_props, model = "teach") %>%
             mutate(pbv_props, model = "pbv")) %>%
   mutate(print_model = factor(model, levels = c("teach", "com", "pbv"), 
                         labels = c("Teaching", "Communication", 
-                                   "Propose but Verify")))
+                                   "Propose but Verify"))) %>%
+  filter(trial >= 1)
 
 
-all_aucs <- mutate(teach_aucs, model = "teach") %>%
-  bind_rows(mutate(com_aucs, model = "com"),
-            mutate(pbv_aucs, model = "pbv")) %>%
-  mutate(print_model = factor(model, levels = c("teach", "com", "pbv"), 
-                              labels = c("Teaching", "Communication", 
-                                         "Propose but Verify")))
+# all_aucs <- mutate(teach_aucs, model = "teach") %>%
+#   bind_rows(mutate(com_aucs, model = "com"),
+#             mutate(pbv_aucs, model = "pbv")) %>%
+#   mutate(print_model = factor(model, levels = c("teach", "com", "pbv"), 
+#                               labels = c("Teaching", "Communication", 
+#                                          "Propose but Verify")))
 
 
 theme_set(theme_classic(base_size = 16))
@@ -86,10 +79,24 @@ server <- function(input, output){
     input$nguesses
   })
   
+  trial_range <- reactive({
+    input$trialRange
+  })
+  
+  output$trialRange <- renderUI({
+ 
+    sliderInput("trialRange",
+                label = "Trial Range",
+                step = 1, value = c(1, 50), 
+                min = min(all_models$trial),
+                max = max(all_models$trial))
+  })
+  
   
   output$learnPlot = renderPlot({
     req(learn_p())
     req(chosen_models())
+    req(trial_range())
     
     selected_models <- all_models %>%
       filter(p == learn_p(), model %in% chosen_models())
@@ -112,7 +119,9 @@ server <- function(input, output){
                  label = print_model)) + 
       geom_smooth(se = FALSE) +
       geom_dl(method = "smart.grid") +
-      scale_x_continuous(name = "Event number", limits = c(1, 100)) + 
+      scale_x_continuous(name = "Event number", 
+                         limits = c(first(trial_range()), 
+                                    last(trial_range()))) + 
       scale_y_continuous(name = "Probability of learning", limits = c(0, 1)) +
       scale_color_ptol() +
       theme(legend.position = "none")
@@ -120,9 +129,11 @@ server <- function(input, output){
   
   output$aucPlot = renderPlot({
     req(chosen_models())
+    req(trial_range())
     
-    selected_models <- all_aucs %>%
-      filter( model %in% chosen_models())
+    selected_models <- all_models %>%
+      filter(model %in% chosen_models(), trial >= first(trial_range()),
+              trial <= last(trial_range())) 
     
     if("com" %in% chosen_models()) {
       selected_models <- selected_models %>%
@@ -137,14 +148,19 @@ server <- function(input, output){
                is.na(nguesses) | nguesses == nguesses())
     }
     
-    selected_models %>%
+    aucs <- selected_models %>%
+      group_by_at(vars(-trial, -prob)) %>%
+      summarise(auc = AUC(trial, prob)) %>%
+      mutate(auc = auc / (range(all_models$trial) %>% diff() + 1))
+    
+    aucs %>%
       ggplot(aes(x = p, y = auc, color = print_model, 
                  label = print_model)) + 
       geom_smooth(se = FALSE) +
       geom_dl(method = "smart.grid") +
       scale_x_continuous(name = "Learning parameter", limits = c(0, 1),
                          breaks = seq(0, 1, .1)) + 
-      scale_y_continuous(name = "Area under the curve", limits = c(50, 100)) +
+      scale_y_continuous(name = "Normalized area under the curve", limits = c(0, 1)) +
       scale_color_ptol() +
       theme(legend.position = "none")
   })

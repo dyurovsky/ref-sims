@@ -14,6 +14,7 @@ ui <- fluidPage(
                                    "Communication" = "com",
                                    "Propose but Verify" = "pbv"),
                        selected = "teach"),
+    uiOutput("trialRange"),
     uiOutput("learningParameter"),
     uiOutput("pointCost"),
     uiOutput("speakCost"),

@@ -105,9 +105,9 @@ U <- 100
 
 DEFAULT_P <- 70
 DEFAULT_S <- 0
+DEFAULT_ALPHA <-2
+DEFAULT_LAMBDA <- .5
 
-alpha <- 2
-lambda <- .5
 
 p <- .6
 
@@ -121,7 +121,7 @@ speak_success_u <- function(S = 0) {
  log(max(U - S, 0) + .001)
 }
 
-speak_fail_u <- function() {
+speak_fail_u <- function(S) {
  log(max(0 - S, .001))
 }
 
@@ -137,7 +137,8 @@ discount <- function(delay, lambda = .5) {
   lambda ^ delay
 }
 
-act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S) {
+act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S, 
+                  alpha = DEFAULT_ALPHA, lambda = DEFAULT_LAMBDA) {
   
   if(delay > MAX_DELAY) {
     expected_util <- 0
@@ -148,44 +149,53 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S) {
   else {
     if(k == 0) {
       
-      speak_util <- speak_fail_u() +
-        discount(delay + 1) * 
-        (act_u(delay + 1, k = 0, n = 0, p, P, S) %>% pull(eu))
+      speak_util <- speak_fail_u(S) +
+        discount(delay + 1, lambda) * 
+        (act_u(delay + 1, k = 0, n = 0, p, P, S, 
+               alpha, lambda) %>% pull(eu))
       
       point_util <- point_u(P) + 
-        discount(delay + 1) * 
-        (act_u(delay + 1, k = 0, n = 0, p, P, S) %>% pull(eu))
+        discount(delay + 1, lambda) * 
+        (act_u(delay + 1, k = 0, n = 0, p, P, S, 
+               alpha, lambda) %>% pull(eu))
       
       teach_util <- teach_u(P, S) + 
-        discount(delay + 1) * 
-        (act_u(delay + 1, teach_outcome(1, p), n = 1, p, P, S) %>% pull(eu))
+        discount(delay + 1, lambda) * 
+        (act_u(delay + 1, teach_outcome(1, p), n = 1, p, P, S, 
+               alpha, lambda) %>% pull(eu))
       
     } else if(k == 1) {
        speak_util <- speak_success_u(S) + 
-                       discount(delay + 1) * 
-                       (act_u(delay + 1, k = 1, n = 0, p, P, S) %>% pull(eu))
+                       discount(delay + 1, lambda) * 
+                       (act_u(delay + 1, k = 1, n = 0, p, P, S, 
+                              alpha, lambda) %>% pull(eu))
 
        point_util <- point_u(P) + 
-                       discount(delay + 1) * 
-                       (act_u(delay + 1, k = 1, n = 0, p, P, S) %>% pull(eu))
+                       discount(delay + 1, lambda) * 
+                       (act_u(delay + 1, k = 1, n = 0, p, P, S, 
+                              alpha, lambda) %>% pull(eu))
        
        teach_util <- teach_u(P, S) + 
-         discount(delay + 1) * 
-         (act_u(delay + 1, k = 1, n = n + 1, p, P, S) %>% pull(eu))
+         discount(delay + 1, lambda) * 
+         (act_u(delay + 1, k = 1, n = n + 1, p, P, S, alpha, lambda) %>%
+            pull(eu))
       
     } else {
       speak_util <- (k * (speak_success_u(S) +
-                           discount(delay + 1) * 
-                           (act_u(delay + 1, k = 1, n = 0, p, P, S) 
+                           discount(delay + 1, lambda) * 
+                           (act_u(delay + 1, k = 1, n = 0, p, P, S, 
+                                  alpha, lambda) 
                             %>% pull(eu)))) +
-        ((1-k) * (speak_fail_u() + discount(delay+1) * 
-                       (act_u(delay + 1, k = 0, n = 0, p, P, S) %>% pull(eu))))
+        ((1-k) * (speak_fail_u(S) + discount(delay+1, lambda) * 
+                       (act_u(delay + 1, k = 0, n = 0, p, P, S, 
+                              alpha, lambda) %>% pull(eu))))
       
-      point_util <- point_u(P) + discount(delay + 1) * 
-         (act_u(delay + 1, k, n, p, P, S) %>% pull(eu))
+      point_util <- point_u(P) + discount(delay + 1, lambda) * 
+         (act_u(delay + 1, k, n, p, P, S, alpha, lambda) %>% pull(eu))
             
-      teach_util <- teach_u(P, S) + discount(delay + 1) * 
-         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1, p, P, S) 
+      teach_util <- teach_u(P, S) + discount(delay + 1, lambda) * 
+         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1, p, P, S, 
+                alpha, lambda) 
           %>% pull(eu))
     }
    
@@ -210,7 +220,9 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S) {
           ppoint = 1 - speak_p - teach_p,
           pteach = teach_p, 
           P = P,
-          S = S)
+          S = S,
+          alpha = alpha,
+          lambda = lambda)
    
 }
 ```
@@ -220,10 +232,12 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S) {
 MAX_DELAY <- 3
 MAX_TRIAL <- 100
 
-communication_probs <- function(p, P = DEFAULT_P, S = DEFAULT_S) {
+communication_probs <- function(p, P = DEFAULT_P, S = DEFAULT_S, 
+                                alpha = DEFAULT_ALPHA, lambda = DEFAULT_LAMBDA) {
 
   teach_probs <- map_df(0:MAX_TRIAL, ~act_u(delay = 0, teach_outcome(.x, p), 
-                                     n = .x, p, P = P, S = S)) %>%
+                                     n = .x, p, P = P, S = S, 
+                                     alpha = alpha, lambda = lambda)) %>%
     select(-delay, -eu) #%>%
    # mutate(know_prob =  teach_outcome(n + 1, p = p))
   
@@ -272,26 +286,30 @@ communication_probs <- function(p, P = DEFAULT_P, S = DEFAULT_S) {
 unknown_remaining(0, 1, teach_counts) %>%
   mutate(p = p,
          P = P,
-         S = S)
+         S = S,
+         alpha = alpha,
+         lambda = lambda)
 }
 
 communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 ```
 
 ```{r cache-communication}
-combos <- expand.grid(p = seq(.1, 1, .1), P = c(70, 50), 
-                      S = c(0, 20)) %>%
-  filter((P == 70 & S == 0) | (P == 50 & S == 20)) %>%
+combos <- expand.grid(p = seq(.1, 1, .1), P = seq(50, 90, 10), 
+                      S = seq(0, 30, 10), alpha = seq(.5, 3, .5),
+                      lambda = seq(0, 1, .1)) %>%
+  filter(P > S, (P + S) <= 100) %>%
   as_tibble() 
 
 
 com_props <- map_df(1:nrow(combos), 
                     ~communication_probs(combos %>% slice(.x) %>% pull(p), 
                                          combos %>% slice(.x) %>% pull(P),
-                                         combos %>% slice(.x) %>% pull(S))) %>%
-  mutate(p = as.numeric(as.character(p)),
-         alpha = 2, lambda = .5)
-
+                                         combos %>% slice(.x) %>% pull(S),
+                                         combos %>% slice(.x) %>% pull(alpha),
+                                         combos %>% slice(.x) %>% 
+                                           pull(lambda))) %>%
+  mutate(p = as.numeric(as.character(p)))
 
 com_aucs <- com_props %>%
   filter(trial != 0) %>%
@@ -392,9 +410,9 @@ ggplot(all_pbv_props, aes(x = n, y = prob, color = as.factor(p))) +
 ```
 
 ```{r pbv_cache}
-pbv_combos <- expand.grid(p = seq(.1, 1, .2), C = c(1, 2, 4), 
-                          nguesses = c(1, 2, 4), 
-                          M = c(16, 32)) %>%
+pbv_combos <- expand.grid(p = seq(.1, 1, .1), C = c(1, 2, 4, 8), 
+                          nguesses = c(1, 2, 3, 4), 
+                          M = c(16, 32, 64, 128)) %>%
   filter(nguesses <= C) %>%
   as_tibble()
         
