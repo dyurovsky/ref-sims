@@ -18,6 +18,8 @@ ui <- fluidPage(
     uiOutput("learningParameter"),
     uiOutput("pointCost"),
     uiOutput("speakCost"),
+    uiOutput("alpha"),
+    uiOutput("lambda"),
     uiOutput("nguesses"),
     uiOutput("C"),
     uiOutput("M")),

@@ -295,28 +295,34 @@ communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 ```
 
 ```{r cache-communication}
-combos <- expand.grid(p = seq(.1, 1, .1), P = seq(50, 90, 10), 
-                      S = seq(0, 30, 10), alpha = seq(.5, 3, .5),
-                      lambda = seq(0, 1, .1)) %>%
+combos <- expand.grid(p = seq(.1, 1, .1), P = c(70), 
+                      S = seq(10,50,10), alpha = seq(.5, 3, .5),
+                      lambda = seq(.1, 1, .2)) %>%
   filter(P > S, (P + S) <= 100) %>%
   as_tibble() 
 
 
-com_props <- map_df(1:nrow(combos), 
+com_props3 <- map_df(1:nrow(combos), 
                     ~communication_probs(combos %>% slice(.x) %>% pull(p), 
                                          combos %>% slice(.x) %>% pull(P),
                                          combos %>% slice(.x) %>% pull(S),
                                          combos %>% slice(.x) %>% pull(alpha),
                                          combos %>% slice(.x) %>% 
                                            pull(lambda))) %>%
-  mutate(p = as.numeric(as.character(p)))
+  mutate(p = as.numeric(as.character(p)),
+         lambda = as.numeric(as.character(lambda)))
+
+join_com_props <- com_props2 %>% 
+  select(-lambda) %>%
+  rename(lambda = labda) %>%
+  bind_rows(com_props)
 
 com_aucs <- com_props %>%
   filter(trial != 0) %>%
   group_by(p, P, S) %>%
   summarise(auc = AUC(trial, prob))
 
-write_csv(com_props, here("cached_data/com_props.csv"))
+write_csv(join_com_props, here("cached_data/com_props.csv"))
 write_csv(com_aucs, here("cached_data/com_aucs.csv"))
 ```
 

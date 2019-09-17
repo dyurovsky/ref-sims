@@ -5,7 +5,7 @@ library(directlabels)
 library(forcats)
 library(DescTools)
 
-LOCAL <- FALSE
+LOCAL <- TRUE
 
 if(LOCAL) {
   teach_props <- read_csv(here("cached_data/teach_props.csv"))
@@ -20,7 +20,7 @@ if(LOCAL) {
 }
 
 com_params <- com_props %>%
-  distinct(P, S)
+  distinct(P, S, alpha, lambda)
 
 pbv_params <- pbv_props %>%
   distinct(M, C, nguesses)
@@ -61,6 +61,14 @@ server <- function(input, output){
   
   speak_cost <- reactive({
     input$speakCost
+  })
+  
+  alpha <- reactive({
+    input$alpha
+  })
+  
+  lambda <- reactive({
+    input$lambda
   })
   
   selected_plot <- reactive({
@@ -104,7 +112,9 @@ server <- function(input, output){
     if("com" %in% chosen_models()) {
       selected_models <- selected_models %>%
         filter(is.na(P) | P == point_cost(),
-               is.na(S) | S == speak_cost())
+               is.na(S) | S == speak_cost(),
+               is.na(alpha) | alpha == alpha(),
+               is.na(lambda) | lambda == lambda())
     }
     
     if("pbv" %in% chosen_models()) {
@@ -138,7 +148,9 @@ server <- function(input, output){
     if("com" %in% chosen_models()) {
       selected_models <- selected_models %>%
         filter(is.na(P) | P == point_cost(),
-               is.na(S) | S == speak_cost())
+               is.na(S) | S == speak_cost(),
+               is.na(alpha) | alpha == alpha(),
+               is.na(lambda) | lambda == lambda())
     }
     
     if("pbv" %in% chosen_models()) {
@@ -186,8 +198,11 @@ server <- function(input, output){
                                  label = "Cost of pointing",
                                  min = min(com_params$P),
                                  max = max(com_params$P),
-                                 step = max(com_params$P) - min(com_params$P),
-                                 value = first(com_params$P)))
+                                 step = (max(com_params$P) - 
+                                           min(com_params$P)) /
+                                   (length(com_params %>% pull(P) %>% 
+                                             unique()) - 1),
+                                 value = last(com_params$P)))
   })
   
   output$speakCost <- renderUI({
@@ -202,9 +217,42 @@ server <- function(input, output){
                                  label = "Cost of speaking",
                                  min = min(options$S),
                                  max = max(options$S),
-                                 step = max(options$S) - min(options$S),
+                                 step = (max(options$S) - 
+                                           min(options$S)) /
+                                   (length(options %>% pull(S) %>% 
+                                             unique()) - 1),
                                  value = first(options$S)))
     })
+  
+  output$alpha <- renderUI({
+    req(chosen_models())
+    
+    conditionalPanel(condition = "input.modelSelect.includes('com')",
+                     sliderInput("alpha",
+                                 label = "Rationality",
+                                 min = min(com_params$alpha),
+                                 max = max(com_params$alpha),
+                                 step = (max(com_params$alpha) - 
+                                           min(com_params$alpha)) /
+                                   (length(com_params %>% pull(alpha) %>% 
+                                             unique()) - 1),
+                                 value = 2))
+  })
+  
+  output$lambda <- renderUI({
+    req(chosen_models())
+    
+    conditionalPanel(condition = "input.modelSelect.includes('com')",
+                     sliderInput("lambda",
+                                 label = "Discount rate",
+                                 min = min(com_params$lambda),
+                                 max = max(com_params$lambda),
+                                 step = (max(com_params$lambda) - 
+                                           min(com_params$lambda)) /
+                                   (length(com_params %>% pull(lambda) %>% 
+                                             unique()) - 1),
+                                 value = .5))
+  })
   
   output$nguesses <- renderUI({
     req(chosen_models())
