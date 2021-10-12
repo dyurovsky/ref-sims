@@ -51,7 +51,7 @@ all_models <- mutate(teach_props, model = "teach") %>%
   filter(trial >= 1)
 
 
-theme_set(theme_few(base_size = 16))
+theme_set(theme_few(base_size = 18))
 
 server <- function(input, output){
   
@@ -112,6 +112,11 @@ server <- function(input, output){
       filter(p == learn_p(), model %in% chosen_models())
     
     if("com" %in% chosen_models()) {
+      req(point_cost())
+      req(speak_cost())
+      req(alpha())
+      req(gamma())
+      
       selected_models <- selected_models %>%
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
@@ -120,6 +125,10 @@ server <- function(input, output){
     }
     
     if("talk" %in% chosen_models()) {
+      req(M())
+      req(C())
+      req(nguesses())
+      
       selected_models <- selected_models %>%
         filter(is.na(M) | M == M(),
                is.na(C) | C == C(),
@@ -130,7 +139,7 @@ server <- function(input, output){
       ggplot(aes(x = trial, y = prob, color = print_model, 
                  label = print_model)) + 
       geom_smooth(se = FALSE, method = "loess", formula = "y ~ x") +
-      geom_dl(method = "smart.grid") +
+      geom_dl(method = list("smart.grid", cex = 1.3)) +
       scale_x_continuous(name = "Event number", 
                          limits = c(first(trial_range()), 
                                     last(trial_range()))) + 
@@ -149,6 +158,11 @@ server <- function(input, output){
       filter(model %in% chosen_models()) 
     
     if("com" %in% chosen_models()) {
+      req(point_cost())
+      req(speak_cost())
+      req(alpha())
+      req(gamma())
+      
       selected_models <- selected_models %>%
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
@@ -157,6 +171,10 @@ server <- function(input, output){
     }
     
     if("talk" %in% chosen_models()) {
+      req(M())
+      req(C())
+      req(nguesses())
+      
       selected_models <- selected_models %>%
         filter(is.na(M) | M == M(),
                is.na(C) | C == C(),
@@ -173,7 +191,7 @@ server <- function(input, output){
       ggplot(aes(x = p, y = trial, color = print_model, 
                  label = print_model)) + 
       geom_smooth(se = FALSE, method = "loess", formula = "y ~ x") +
-      geom_dl(method = "smart.grid") +
+      geom_dl(method = list("smart.grid", cex = 1.3)) +
       scale_x_continuous(limits = c(.1, 1),
                           breaks = seq(.1, 1, .1)) + 
       labs(x = TeX("Learning rate ($p$)"),
