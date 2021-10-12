@@ -8,7 +8,7 @@ library(DescTools)
 library(latex2exp)
 library(glue)
 
-LOCAL <- TRUE
+LOCAL <- FALSE
 
 if(LOCAL) {
   teach_props <- fread(here("cached_data/teach_props.csv")) %>%
