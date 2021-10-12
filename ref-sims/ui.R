@@ -12,14 +12,15 @@ ui <- fluidPage(
                        label = "Select Model",
                        choices = c("Teaching" = "teach",
                                    "Communication" = "com",
-                                   "Propose but Verify" = "pbv"),
+                                   "Talking" = "talk"),
                        selected = "teach"),
     uiOutput("trialRange"),
+    uiOutput("threshold"),
     uiOutput("learningParameter"),
     uiOutput("pointCost"),
     uiOutput("speakCost"),
     uiOutput("alpha"),
-    uiOutput("lambda"),
+    uiOutput("gamma"),
     uiOutput("nguesses"),
     uiOutput("C"),
     uiOutput("M")),
@@ -27,7 +28,7 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(id = "plotSelector",
                   tabPanel("Learning", plotOutput("learnPlot")),
-                  tabPanel("AUC", plotOutput("aucPlot")))
+                  tabPanel("Events to Threshold", plotOutput("threshPlot")))
       
     )
   )

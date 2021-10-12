@@ -10,6 +10,7 @@ library(tidyverse)
 library(tidyboot)
 library(DescTools)
 library(here)
+library(glue)
 
 theme_set(theme_few(base_size = 14))
 
@@ -25,12 +26,6 @@ teach_learn_prop <- function(p) {
          %>% unlist()) %>%
     mutate(p = p)
 }
-
-
-teach_props <- map_df(seq(.25,.75,.25), ~teach_learn_prop(.x))
-
-# ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
-#   geom_line()
 ```
 
 ```{r teaching_cache, eval = F}
@@ -46,62 +41,10 @@ write_csv(teach_props, here("cached_data/teach_props.csv"))
 write_csv(teach_aucs, here("cached_data/teach_aucs.csv"))
 ```
 
-```{r xsit, eval = F, include = F}
-generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
-  
-  stims <- tibble(item = 2:M, count = 0) %>%
-    mutate(trial = 0)
-  
-  for(i in 1:n) {
-    
-    last_trial <- stims %>%
-      filter(trial == i -1)
-    
-    increment <- sample(last_trial %>% pull(item), C - 1)
-      
-    this_trial <- last_trial %>%
-      mutate(count = if_else(item %in% increment, count + 1, count),
-             trial = trial + 1)
-    
-    stims <- bind_rows(stims, this_trial)
-    
-  }
-  
-  stims %>%
-    bind_rows(tibble(item = 1, trial = 1:n, count = trial)) %>%
-    filter(trial > 0)
-}
-  
-
-C <- 4
-M <- 16
-p <- .5
-alpha <- 1
-
-crossit_probs <- function(p, C, M) {
-  generate_xsit_stims(C, M) %>%
-    mutate(assoc = count * (p/C),
-           target = item == 1,
-           str = exp(alpha * assoc)) %>%
-    group_by(trial, target) %>%
-    summarise(str = sum(str)) %>%
-    spread(target, str) %>%
-    mutate(prob = `TRUE` / (`TRUE` + `FALSE`)) %>%
-    select(trial, prob) %>%
-    rename(n = trial) %>%
-    mutate(p = p)
-}
-
-cross_props <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, C, M))
-
-# ggplot(cross_props, aes(x = n, y = prob, color = as.factor(p))) + 
-#   geom_line()
-```
-
 personalized communication
 ```{r setup-communication} 
-MAX_DELAY <- 10
 U <- 100
+EPSILON <- .001
 
 DEFAULT_P <- 70
 DEFAULT_S <- 0
@@ -111,26 +54,25 @@ DEFAULT_LAMBDA <- .5
 
 p <- .6
 
-
 teach_outcome <- function(n = 1, p = .6) {
   1 - (1-p) ^ n
 }
 
 # this can't contain ps if it's going to get logged
 speak_success_u <- function(S = 0) {
- log(max(U - S, 0) + .001)
+ log(max(U - S, 0) + EPSILON)
 }
 
 speak_fail_u <- function(S) {
- log(max(0 - S, .001))
+ log(max(0 - S, EPSILON))
 }
 
 point_u <- function(P = 30) {
-  log(max(U - P, 0) + .001)
+  log(max(U - P, 0) + EPSILON)
 }
 
 teach_u <- function(P = 30, S = 0) {
-  log(max(U - P - S, 0) + .001)
+  log(max(U - P - S, 0) + EPSILON)
 }
 
 discount <- function(delay, lambda = .5) {
@@ -159,9 +101,10 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S,
         (act_u(delay + 1, k = 0, n = 0, p, P, S, 
                alpha, lambda) %>% pull(eu))
       
+      #teach_outcome(1, p) instead of 1
       teach_util <- teach_u(P, S) + 
         discount(delay + 1, lambda) * 
-        (act_u(delay + 1, teach_outcome(1, p), n = 1, p, P, S, 
+        (act_u(delay + 1, k = 1, n = 1, p, P, S, 
                alpha, lambda) %>% pull(eu))
       
     } else if(k == 1) {
@@ -193,8 +136,9 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S,
       point_util <- point_u(P) + discount(delay + 1, lambda) * 
          (act_u(delay + 1, k, n, p, P, S, alpha, lambda) %>% pull(eu))
             
+      # teach_outcome(n + 1, p) instead of 1
       teach_util <- teach_u(P, S) + discount(delay + 1, lambda) * 
-         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1, p, P, S, 
+         (act_u(delay + 1, k = 1, n = n + 1, p, P, S, 
                 alpha, lambda) 
           %>% pull(eu))
     }
@@ -228,7 +172,7 @@ act_u <- function(delay, k, n, p = .6, P = DEFAULT_P, S = DEFAULT_S,
 ```
 
 
-```{r simulate-communcation}
+```{r simulate-communocation}
 MAX_DELAY <- 3
 MAX_TRIAL <- 100
 
@@ -290,19 +234,19 @@ unknown_remaining(0, 1, teach_counts) %>%
          alpha = alpha,
          lambda = lambda)
 }
-
-communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 ```
 
 ```{r cache-communication}
-combos <- expand.grid(p = seq(.1, 1, .1), P = c(70), 
-                      S = seq(10,50,10), alpha = seq(.5, 3, .5),
-                      lambda = seq(.1, 1, .2)) %>%
+#.1 and, 10, .5, .2 steps
+combos <- expand_grid(p = seq(.1, 1, .1), P = c(70,50,60,80), 
+                      S = c(0,10,20,30), alpha = seq(.5, 3, .5),
+                      lambda = seq(.1, 1, .1)) %>%
   filter(P > S, (P + S) <= 100) %>%
+  filter(!(P == 50 & S %in% c(0,20)), !(P == 70 & S %in% c(0,20)))
   as_tibble() 
 
 
-com_props3 <- map_df(1:nrow(combos), 
+com_props <- map_df(1:nrow(combos), 
                     ~communication_probs(combos %>% slice(.x) %>% pull(p), 
                                          combos %>% slice(.x) %>% pull(P),
                                          combos %>% slice(.x) %>% pull(S),
@@ -312,18 +256,19 @@ com_props3 <- map_df(1:nrow(combos),
   mutate(p = as.numeric(as.character(p)),
          lambda = as.numeric(as.character(lambda)))
 
+com_props2 <- read_csv(here("cached_data/com_props_newmodel.csv"))
+
+
 join_com_props <- com_props2 %>% 
-  select(-lambda) %>%
-  rename(lambda = labda) %>%
   bind_rows(com_props)
 
-com_aucs <- com_props %>%
+com_aucs <- join_com_props %>%
   filter(trial != 0) %>%
   group_by(p, P, S) %>%
   summarise(auc = AUC(trial, prob))
 
-write_csv(join_com_props, here("cached_data/com_props.csv"))
-write_csv(com_aucs, here("cached_data/com_aucs.csv"))
+write_csv(join_com_props, here("cached_data/join_com_props.csv"))
+write_csv(com_aucs, here("cached_data/join_com_aucs.csv"))
 ```
 
 ```{r propose-but-verify}
@@ -377,51 +322,21 @@ propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100,
 
 pbv_samples <- function(reps = 1000, p = .6, C = 4, M = 16, n = 100, 
                         nguesses = 1) {
+  print(glue("p = {p}, C = {C}, M = {M}, nguesses = {nguesses}"))
   replicate(reps, propose_but_verify(p, C, M, n, nguesses)) %>%
     enframe() %>%
     select(-name) %>%
     mutate(p = p, C = C, M = M, nguesses = nguesses) %>%
     rename(n = value)
 }
-
-# pbv_props_4 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 4)) %>%
-#   bind_rows() %>%
-#   group_by(p, n) %>%
-#   summarise(prob = n()) %>%
-#   complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
-#   arrange(p, n) %>%
-#   mutate(prob = prob/sum(prob)) %>%
-#   mutate(prob = cumsum(prob)) 
-# 
-# 
-# pbv_props_1 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 1)) %>%
-#   bind_rows() %>%
-#   group_by(p, n) %>%
-#   summarise(prob = n()) %>%
-#   complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
-#   arrange(p, n) %>%
-#   mutate(prob = prob/sum(prob)) %>%
-#   mutate(prob = cumsum(prob)) 
-# 
-# AUC(pbv_props_1$prob, pbv_props_4)
-
-all_pbv_props <- pbv_props_1 %>%
-  mutate(nguesses = 1) %>%
-  bind_rows(mutate(pbv_props_4, nguesses = 4))
-
-ggplot(all_pbv_props, aes(x = n, y = prob, color = as.factor(p))) + 
-  geom_line(aes(linetype = as.factor(nguesses))) + 
-  scale_color_brewer(palette = "Set1")
-
 ```
 
 ```{r pbv_cache}
-pbv_combos <- expand.grid(p = seq(.1, 1, .1), C = c(1, 2, 4, 8), 
+pbv_combos <- expand_grid(p = seq(.1, 1, .1), C = c(1, 2, 4, 8), 
                           nguesses = c(1, 2, 3, 4), 
-                          M = c(16, 32, 64, 128)) %>%
-  filter(nguesses <= C) %>%
-  as_tibble()
-        
+                          M = c(8, 16, 32, 64, 128)) %>%
+  filter(nguesses <= C) 
+     
 pbv_props <- map_df(1:nrow(pbv_combos), 
                     ~pbv_samples(p = pbv_combos %>% slice(.x) %>% pull(p), 
                                  C = pbv_combos %>% slice(.x) %>% pull(C),
@@ -436,6 +351,7 @@ pbv_props <- map_df(1:nrow(pbv_combos),
   mutate(prob = prob/sum(prob),
          prob = cumsum(prob)) %>%
   rename(trial = n)
+
 
 pbv_aucs <- pbv_props %>%
   group_by(M, C, nguesses, p) %>%

@@ -2,48 +2,56 @@ library(tidyverse)
 library(ggthemes)
 library(here)
 library(directlabels)
+library(data.table)
 library(forcats)
 library(DescTools)
+library(latex2exp)
+library(glue)
 
-LOCAL <- FALSE
+LOCAL <- TRUE
 
 if(LOCAL) {
-  teach_props <- read_csv(here("cached_data/teach_props.csv"))
-  com_props <- read_csv(here("cached_data/com_props.csv"))
-  pbv_props <- read_csv(here("cached_data/pbv_props.csv"))
+  teach_props <- fread(here("cached_data/teach_props.csv")) %>%
+    as_tibble()
+                          
+  com_props <- fread(here("cached_data/com_props.csv")) %>%
+    as_tibble() %>%
+    rename(gamma = lambda) %>%
+    filter(P <= 70, S <= 20)
+  
+  talk_props <- fread(here("cached_data/talk_props.csv")) %>%
+    as_tibble()
 
   
 } else{
-  teach_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/teach_props.csv")
-  com_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/com_props.csv")
-  pbv_props <- read_csv("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/pbv_props.csv")
+  teach_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/teach_props.csv") %>%
+    as_tibble()
+  
+  com_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/com_props.csv") %>%
+    as_tibble() %>%
+    rename(gamma = lambda) %>%
+    filter(P <= 70, S <= 20)
+  
+  talk_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/talk_props.csv") %>%
+    as_tibble()
 }
 
 com_params <- com_props %>%
-  distinct(P, S, alpha, lambda)
+  distinct(P, S, alpha, gamma)
 
-pbv_params <- pbv_props %>%
+talk_params <- talk_props %>%
   distinct(M, C, nguesses)
-
 
 all_models <- mutate(teach_props, model = "teach") %>%
   bind_rows(mutate(com_props, model = "com"),
-            mutate(pbv_props, model = "pbv")) %>%
-  mutate(print_model = factor(model, levels = c("teach", "com", "pbv"), 
+            mutate(talk_props, model = "talk")) %>%
+  mutate(print_model = factor(model, levels = c("teach", "com", "talk"), 
                         labels = c("Teaching", "Communication", 
-                                   "Propose but Verify"))) %>%
+                                   "Talking"))) %>%
   filter(trial >= 1)
 
 
-# all_aucs <- mutate(teach_aucs, model = "teach") %>%
-#   bind_rows(mutate(com_aucs, model = "com"),
-#             mutate(pbv_aucs, model = "pbv")) %>%
-#   mutate(print_model = factor(model, levels = c("teach", "com", "pbv"), 
-#                               labels = c("Teaching", "Communication", 
-#                                          "Propose but Verify")))
-
-
-theme_set(theme_classic(base_size = 16))
+theme_set(theme_few(base_size = 16))
 
 server <- function(input, output){
   
@@ -67,8 +75,8 @@ server <- function(input, output){
     input$alpha
   })
   
-  lambda <- reactive({
-    input$lambda
+  gamma <- reactive({
+    input$gamma
   })
   
   selected_plot <- reactive({
@@ -91,15 +99,9 @@ server <- function(input, output){
     input$trialRange
   })
   
-  output$trialRange <- renderUI({
- 
-    sliderInput("trialRange",
-                label = "Trial Range",
-                step = 1, value = c(1, 50), 
-                min = min(all_models$trial),
-                max = max(all_models$trial))
+  threshold <- reactive({
+    input$threshold / 100
   })
-  
   
   output$learnPlot = renderPlot({
     req(learn_p())
@@ -114,80 +116,109 @@ server <- function(input, output){
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
                is.na(alpha) | alpha == alpha(),
-               is.na(lambda) | lambda == lambda())
+               is.na(gamma) | gamma == gamma())
     }
     
-    if("pbv" %in% chosen_models()) {
+    if("talk" %in% chosen_models()) {
       selected_models <- selected_models %>%
         filter(is.na(M) | M == M(),
                is.na(C) | C == C(),
                is.na(nguesses) | nguesses == nguesses())
     }
-    
-   selected_models %>%
+  
+    to_plot <- selected_models %>%
       ggplot(aes(x = trial, y = prob, color = print_model, 
                  label = print_model)) + 
-      geom_smooth(se = FALSE) +
+      geom_smooth(se = FALSE, method = "loess", formula = "y ~ x") +
       geom_dl(method = "smart.grid") +
       scale_x_continuous(name = "Event number", 
                          limits = c(first(trial_range()), 
                                     last(trial_range()))) + 
       scale_y_continuous(name = "Probability of learning", limits = c(0, 1)) +
-      scale_color_ptol() +
+      scale_color_ptol(drop = FALSE) +
       theme(legend.position = "none")
+    
+    suppressWarnings(print(to_plot))
   })
   
-  output$aucPlot = renderPlot({
+  output$threshPlot = renderPlot({
     req(chosen_models())
-    req(trial_range())
+    req(threshold())
     
     selected_models <- all_models %>%
-      filter(model %in% chosen_models(), trial >= first(trial_range()),
-              trial <= last(trial_range())) 
+      filter(model %in% chosen_models()) 
     
     if("com" %in% chosen_models()) {
       selected_models <- selected_models %>%
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
                is.na(alpha) | alpha == alpha(),
-               is.na(lambda) | lambda == lambda())
+               is.na(gamma) | gamma == gamma())
     }
     
-    if("pbv" %in% chosen_models()) {
+    if("talk" %in% chosen_models()) {
       selected_models <- selected_models %>%
         filter(is.na(M) | M == M(),
                is.na(C) | C == C(),
                is.na(nguesses) | nguesses == nguesses())
     }
     
-    aucs <- selected_models %>%
+
+    threshs <- selected_models %>%
       group_by_at(vars(-trial, -prob)) %>%
-      summarise(auc = AUC(trial, prob)) %>%
-      mutate(auc = auc / (range(all_models$trial) %>% diff() + 1))
+      filter(prob >= threshold()) %>%
+      slice(1)
     
-    aucs %>%
-      ggplot(aes(x = p, y = auc, color = print_model, 
+    to_plot <- threshs %>%
+      ggplot(aes(x = p, y = trial, color = print_model, 
                  label = print_model)) + 
-      geom_smooth(se = FALSE) +
+      geom_smooth(se = FALSE, method = "loess", formula = "y ~ x") +
       geom_dl(method = "smart.grid") +
-      scale_x_continuous(name = "Learning parameter", limits = c(0, 1),
-                         breaks = seq(0, 1, .1)) + 
-      scale_y_continuous(name = "Normalized area under the curve", limits = c(0, 1)) +
+      scale_x_continuous(limits = c(.1, 1),
+                          breaks = seq(.1, 1, .1)) + 
+      labs(x = TeX("Learning rate ($p$)"),
+           y = glue("Events to {threshold() * 100}% learning")) + 
       scale_color_ptol() +
       theme(legend.position = "none")
+    
+    suppressWarnings(print(to_plot))
   })
   
   output$learningParameter <- renderUI({
     req(selected_plot())
     
     conditionalPanel(condition = "input.plotSelector == `Learning`",
-      sliderInput("learningParameter",
-                  label = "Learning parameter",
-                  value = median(all_models$p),
-                  step =  1 / distinct(all_models, p) %>% pull() %>% length(), 
-                  min = min(all_models$p),
-                  max = max(all_models$p))
-      )
+                     sliderInput("learningParameter",
+                                 label = "Learning Parameter",
+                                 value = median(all_models$p),
+                                 step =  1 / distinct(all_models, p) %>% pull() %>% length(), 
+                                 min = min(all_models$p),
+                                 max = max(all_models$p)))
+  })
+  
+  
+  output$trialRange <- renderUI({
+    req(selected_plot())
+    
+    conditionalPanel(condition = "input.plotSelector == `Learning`",
+                     sliderInput("trialRange",
+                                 label = "Trial Range",
+                                 step = 1, value = c(1, 50), 
+                                 min = min(all_models$trial),
+                                 max = max(all_models$trial)))
+  })
+  
+  output$threshold <- renderUI({
+    req(selected_plot())
+    
+    conditionalPanel(condition = "input.plotSelector == `Events to Threshold`",
+                     sliderInput("threshold",
+                                 label = "Percent learners succeed",
+                                 value = 75,
+                                 step =  1, 
+                                 min = 1,
+                                 max = 100)
+    )
   })
   
   output$pointCost <- renderUI({
@@ -202,7 +233,7 @@ server <- function(input, output){
                                            min(com_params$P)) /
                                    (length(com_params %>% pull(P) %>% 
                                              unique()) - 1),
-                                 value = last(com_params$P)))
+                                 value = 70))
   })
   
   output$speakCost <- renderUI({
@@ -239,17 +270,17 @@ server <- function(input, output){
                                  value = 2))
   })
   
-  output$lambda <- renderUI({
+  output$gamma <- renderUI({
     req(chosen_models())
     
     conditionalPanel(condition = "input.modelSelect.includes('com')",
-                     sliderInput("lambda",
+                     sliderInput("gamma",
                                  label = "Discount rate",
-                                 min = min(com_params$lambda),
-                                 max = max(com_params$lambda),
-                                 step = (max(com_params$lambda) - 
-                                           min(com_params$lambda)) /
-                                   (length(com_params %>% pull(lambda) %>% 
+                                 min = min(com_params$gamma),
+                                 max = max(com_params$gamma),
+                                 step = (max(com_params$gamma) - 
+                                           min(com_params$gamma)) /
+                                   (length(com_params %>% pull(gamma) %>% 
                                              unique()) - 1),
                                  value = .5))
   })
@@ -257,11 +288,11 @@ server <- function(input, output){
   output$nguesses <- renderUI({
     req(chosen_models())
     
-    conditionalPanel(condition = "input.modelSelect.includes('pbv')",
+    conditionalPanel(condition = "input.modelSelect.includes('talk')",
                      sliderInput("nguesses",
                                  label = "Number of Hypotheses",
-                                 min = min(pbv_params$nguesses),
-                                 max = max(pbv_params$nguesses),
+                                 min = min(talk_params$nguesses),
+                                 max = max(talk_params$nguesses),
                                  step = 1,
                                  value = 1))
   })
@@ -270,10 +301,10 @@ server <- function(input, output){
     req(chosen_models())
     req(nguesses())
     
-    options <- pbv_params %>%
+    options <- talk_params %>%
       filter(nguesses == nguesses())
     
-    conditionalPanel(condition = "input.modelSelect.includes('pbv')",
+    conditionalPanel(condition = "input.modelSelect.includes('talk')",
                      sliderInput("C",
                                  label = "Objects per Event",
                                  min = min(options$C),
@@ -285,12 +316,12 @@ server <- function(input, output){
   output$M <- renderUI({
     req(chosen_models())
     
-    conditionalPanel(condition = "input.modelSelect.includes('pbv')",
+    conditionalPanel(condition = "input.modelSelect.includes('talk')",
                      sliderInput("M",
                                  label = "Total Vocabulary Size",
-                                 min = min(pbv_params$M),
-                                 max = max(pbv_params$M),
-                                 step = max(pbv_params$M) - min(pbv_params$M),
+                                 min = min(talk_params$M),
+                                 max = max(talk_params$M),
+                                 step = max(talk_params$M) - min(talk_params$M),
                                  value = 16))
   })
   
