@@ -9,28 +9,17 @@ library(latex2exp)
 
 library(glue)
 
-LOCAL <- FALSE
+teach_props <- read_feather("cached_data/joint_teach_props.feather") %>%
+  as_tibble()
+                        
+com_props <- read_feather("cached_data/joint_communicate_props.feather") %>%
+  as_tibble() %>%
+  rename(gamma = lambda)
 
-if(LOCAL) {
-  teach_props <- read_feather(here("cached_data/joint_teach_props.feather")) %>%
-    as_tibble()
-                          
-  com_props <- read_feather(here("cached_data/joint_communicate_props.feather")) %>%
-    as_tibble() %>%
-    rename(gamma = lambda)
-  
-  talk_props <- read_feather(here("cached_data/joint_talk_props.feather")) %>%
-    as_tibble()
+talk_props <- read_feather("cached_data/joint_talk_props.feather") %>%
+  as_tibble()
 
   
-} else{
-  teach_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_teach_props.feather")
-  
-  com_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_communicate_props.feather") %>%
-    rename(gamma = lambda)
-  
-  talk_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_talk_props.feather")
-}
 
 com_params <- com_props %>%
   distinct(P, S, alpha, gamma)
@@ -132,8 +121,6 @@ server <- function(input, output){
                is.na(gamma) | 
                  (gamma - gamma() <= 1e-5 & gamma() - gamma <= 1e-5))
     }
-    
-    print(selected_models %>% filter(model == "com"))
   
     to_plot <- selected_models %>%
       ggplot(aes(x = trial, y = prob, color = print_model, 

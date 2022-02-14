@@ -37,4 +37,4 @@ rsconnect/
 
 .DS_Store
 
-cached_data/joint_sim_splits/*
+ref-sims/cached_data/joint_sim_splits/*
