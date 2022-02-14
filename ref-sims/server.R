@@ -2,38 +2,34 @@ library(tidyverse)
 library(ggthemes)
 library(here)
 library(directlabels)
-library(data.table)
+library(feather)
 library(forcats)
 library(DescTools)
 library(latex2exp)
+
 library(glue)
 
 LOCAL <- FALSE
 
 if(LOCAL) {
-  teach_props <- fread(here("cached_data/teach_props.csv")) %>%
+  teach_props <- read_feather(here("cached_data/joint_teach_props.feather")) %>%
     as_tibble()
                           
-  com_props <- fread(here("cached_data/com_props.csv")) %>%
+  com_props <- read_feather(here("cached_data/joint_communicate_props.feather")) %>%
     as_tibble() %>%
-    rename(gamma = lambda) %>%
-    filter(P <= 70, S <= 20)
+    rename(gamma = lambda)
   
-  talk_props <- fread(here("cached_data/talk_props.csv")) %>%
+  talk_props <- read_feather(here("cached_data/joint_talk_props.feather")) %>%
     as_tibble()
 
   
 } else{
-  teach_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/teach_props.csv") %>%
-    as_tibble()
+  teach_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_talk_props.feather")
   
-  com_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/com_props.csv") %>%
-    as_tibble() %>%
-    rename(gamma = lambda) %>%
-    filter(P <= 70, S <= 20)
+  com_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_communicate_props.feather") %>%
+    rename(gamma = lambda)
   
-  talk_props <- fread("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/talk_props.csv") %>%
-    as_tibble()
+  talk_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_talk_props.feather")
 }
 
 com_params <- com_props %>%
@@ -104,12 +100,24 @@ server <- function(input, output){
   })
   
   output$learnPlot = renderPlot({
+
     req(learn_p())
     req(chosen_models())
     req(trial_range())
     
     selected_models <- all_models %>%
-      filter(p == learn_p(), model %in% chosen_models())
+      filter(p - learn_p() <= 1e-5, learn_p() - p <= 1e-5 , model %in% chosen_models())
+    
+    if("talk" %in% chosen_models() | "com" %in% chosen_models()) {
+      req(M())
+      req(C())
+      req(nguesses())
+      
+      selected_models <- selected_models %>%
+        filter(is.na(M) | M == M(),
+               is.na(C) | C == C(),
+               is.na(nguesses) | nguesses == nguesses())
+    }
     
     if("com" %in% chosen_models()) {
       req(point_cost())
@@ -121,19 +129,11 @@ server <- function(input, output){
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
                is.na(alpha) | alpha == alpha(),
-               is.na(gamma) | gamma == gamma())
+               is.na(gamma) | 
+                 (gamma - gamma() <= 1e-5 & gamma() - gamma <= 1e-5))
     }
     
-    if("talk" %in% chosen_models()) {
-      req(M())
-      req(C())
-      req(nguesses())
-      
-      selected_models <- selected_models %>%
-        filter(is.na(M) | M == M(),
-               is.na(C) | C == C(),
-               is.na(nguesses) | nguesses == nguesses())
-    }
+    print(selected_models %>% filter(model == "com"))
   
     to_plot <- selected_models %>%
       ggplot(aes(x = trial, y = prob, color = print_model, 
@@ -167,10 +167,11 @@ server <- function(input, output){
         filter(is.na(P) | P == point_cost(),
                is.na(S) | S == speak_cost(),
                is.na(alpha) | alpha == alpha(),
-               is.na(gamma) | gamma == gamma())
+               is.na(gamma) | 
+                 (gamma - gamma() <= 1e-5 & gamma() - gamma <= 1e-5))
     }
     
-    if("talk" %in% chosen_models()) {
+    if("talk" %in% chosen_models() | "com" %in% chosen_models()) {
       req(M())
       req(C())
       req(nguesses())
@@ -181,7 +182,7 @@ server <- function(input, output){
                is.na(nguesses) | nguesses == nguesses())
     }
     
-
+  
     threshs <- selected_models %>%
       group_by_at(vars(-trial, -prob)) %>%
       filter(prob >= threshold()) %>%
@@ -205,11 +206,14 @@ server <- function(input, output){
   output$learningParameter <- renderUI({
     req(selected_plot())
     
+    ps <- distinct(all_models, p) %>% pull()
+    
     conditionalPanel(condition = "input.plotSelector == `Learning`",
                      sliderInput("learningParameter",
                                  label = "Learning Parameter",
-                                 value = median(all_models$p),
-                                 step =  1 / distinct(all_models, p) %>% pull() %>% length(), 
+                                 value = ps[3],
+                                 round = -2,
+                                 step =  1 / (ps %>% length()), 
                                  min = min(all_models$p),
                                  max = max(all_models$p)))
   })
@@ -296,23 +300,19 @@ server <- function(input, output){
                                  label = "Discount rate",
                                  min = min(com_params$gamma),
                                  max = max(com_params$gamma),
-                                 step = (max(com_params$gamma) - 
-                                           min(com_params$gamma)) /
-                                   (length(com_params %>% pull(gamma) %>% 
-                                             unique()) - 1),
-                                 value = .5))
+                                 step = .2,
+                                 value = .6))
   })
   
   output$nguesses <- renderUI({
     req(chosen_models())
     
-    conditionalPanel(condition = "input.modelSelect.includes('talk')",
-                     sliderInput("nguesses",
-                                 label = "Number of Hypotheses",
-                                 min = min(talk_params$nguesses),
-                                 max = max(talk_params$nguesses),
-                                 step = 1,
-                                 value = 1))
+    sliderInput("nguesses",
+                label = "Number of Hypotheses",
+                min = min(talk_params$nguesses),
+                max = max(talk_params$nguesses),
+                step = 1,
+                value = 1)
   })
   
   output$C <- renderUI({
@@ -322,28 +322,18 @@ server <- function(input, output){
     options <- talk_params %>%
       filter(nguesses == nguesses())
     
-    conditionalPanel(condition = "input.modelSelect.includes('talk')",
-                     sliderInput("C",
-                                 label = "Objects per Event",
-                                 min = min(options$C),
-                                 max = max(options$C),
-                                 step = 1,
-                                 value = 4))
+      sliderTextInput("C",
+                  label = "Objects per Event",
+                  choices = unique(options$C),
+                  selected = 4)
   })
   
   output$M <- renderUI({
     req(chosen_models())
     
-    conditionalPanel(condition = "input.modelSelect.includes('talk')",
-                     sliderInput("M",
-                                 label = "Total Vocabulary Size",
-                                 min = min(talk_params$M),
-                                 max = max(talk_params$M),
-                                 step = max(talk_params$M) - min(talk_params$M),
-                                 value = 16))
+    sliderTextInput("M",
+                label = "Total Vocabulary Size",
+                choices = unique(talk_params$M),
+                selected = 32)
   })
-  
- 
-  
-  
 }

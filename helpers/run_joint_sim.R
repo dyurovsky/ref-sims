@@ -1,10 +1,8 @@
 #!/usr/bin/env Rscript
 args = commandArgs(trailingOnly=TRUE)
 
-
-
-if (length(args)==0) {
-  stop("Need to specify the rows to simulate", call.=FALSE)
+if (length(args) != 3) {
+  stop("Need to specify the model, ending rows, and step size", call.=FALSE)
 } 
 
 suppressPackageStartupMessages(library(tidyverse))
@@ -154,7 +152,7 @@ generate_propose_stims <- function(C = 4, M = 16, n = 100) {
 }
 
 
-joint_model<- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, nguesses = 4,
+joint_model <- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, nguesses = 4,
                        P = DEFAULT_P, S = DEFAULT_S, alpha = DEFAULT_ALPHA, 
                        lambda = DEFAULT_LAMBDA) {
   stims <- generate_propose_stims(C, M, n)
@@ -164,7 +162,6 @@ joint_model<- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, ng
   n_taught <- 0
   
   for(i in 1:n) {
-    
     
     if(model == "communicate") {
       caregiver_probs <- m_act_u(delay = 0, teach_outcome(n_taught, p), 
@@ -180,7 +177,7 @@ joint_model<- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, ng
       chosen_modality <- "pspeak"
     }
     
-    if(length(guesses) == 1 && guesses == 1) {
+    if(chosen_modality != "ppoint" && length(guesses) == 1 && guesses == 1) {
       trial <- i
       break
     }
@@ -196,11 +193,20 @@ joint_model<- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, ng
     } else { #pointing doesn't help
       next
     }
+    
     matches <- intersect(guesses, trial_stims)
     if(is_empty(matches)) {
       selected <- sample(trial_stims, min(nguesses, length(trial_stims)))
       
       kept <- selected[as.logical(rbinom(length(selected), 1, p))]
+    
+      # got taught and learned
+      if(chosen_modality == "pteach" && length(kept) == 1 && kept == 1) { 
+
+        trial <- i
+        break
+      }
+      
       if(is_empty(kept))
         guesses <- 0
       else
@@ -213,11 +219,15 @@ joint_model<- function(model = "communicate", p = .6, C = 4, M = 16, n = 100, ng
   return(trial)
 }
 
-joint_samples <- function(model = "communicate", reps = 1000, p = .6, C = 4, M = 16, n = 100, 
+
+model <- args[1]
+rows <- as.numeric(args[2])
+steps <- as.numeric(args[3])
+
+joint_samples <- function(model = model, reps = 1000, p = .6, C = 4, M = 16, n = 100, 
                           nguesses = 1, P = DEFAULT_P, S = DEFAULT_S, 
                           alpha = DEFAULT_ALPHA, lambda = DEFAULT_LAMBDA) {
-  # print(glue("model = {model}, p = {p}, C = {C}, M = {M}, nguesses = {nguesses} 
-  #            P = {P}, S = {S}, alpha = {alpha}, lambda = {lambda}"))
+  
   replicate(reps, joint_model(model, p, C, M, n, nguesses, 
                               P, S , alpha, lambda)) %>%
     enframe() %>%
@@ -227,27 +237,61 @@ joint_samples <- function(model = "communicate", reps = 1000, p = .6, C = 4, M =
     rename(n = value)
 }
 
-joint_params <- expand_grid(p = seq(.2, 1, .2), P = c(50, 60, 70), 
-                            S = c(0, 10, 20), alpha = seq(.5, 3, .5),
-                            lambda = seq(.2, 1, .2),
-                            C = c(1, 2, 4, 8), 
-                            nguesses = c(1, 2, 3, 4), 
-                            M = c(8, 32, 128)) %>%
-  filter(P > S, (P + S) <= 100) %>%
-  filter(nguesses <= C)
+if(model = "communicate") {
+    
+    joint_params <- expand_grid(model = "communicate", 
+                                p = seq(.2, 1, .2), P = c(50, 60, 70), 
+                                S = c(0, 10, 20), alpha = seq(.5, 3, .5),
+                                lambda = seq(.2, 1, .2),
+                                C = c(1, 2, 4, 8), 
+                                nguesses = c(1, 2, 3, 4), 
+                                M = c(8, 32, 128)) %>%
+      filter(P > S, (P + S) <= 100) %>%
+      filter(nguesses <= C)
 
-join_props <- map_df((as.numeric(args[1])-99):as.numeric(args[1]), 
-                     ~joint_samples(p = joint_params %>% slice(.x) %>% pull(p), 
-                                    C = joint_params %>% slice(.x) %>% pull(C),
-                                    M = joint_params %>% slice(.x) %>% pull(M),
-                                    nguesses = joint_params %>% slice(.x) %>%
-                                      pull(nguesses),
-                                    P = joint_params %>% slice(.x) %>% pull(P),
-                                    S = joint_params %>% slice(.x) %>% pull(S),
-                                    alpha = joint_params %>% slice(.x) %>% 
-                                      pull(alpha),
-                                    lambda = joint_params %>% slice(.x) %>% 
-                                      pull(lambda)))
+} else if(model == "talk") {
+  joint_params <- expand_grid(model = "talk", 
+                              p = seq(.2, 1, .2),
+                              C = c(1, 2, 4, 8), 
+                              nguesses = c(1, 2, 3, 4), 
+                              M = c(8, 32, 128),
+                              P = NA,
+                              S = NA,
+                              alpha = NA,
+                              lambda = NA) %>%
+    filter(nguesses <= C)
+} else if(model == "teach") {
+  joint_params <- expand_grid(model = "teach", 
+                              p = seq(.2, 1, .2),
+                              C = c(1, 2, 4, 8), 
+                              nguesses = c(1, 2, 3, 4), 
+                              M = c(8, 32, 128),
+                              P = NA,
+                              S = NA,
+                              alpha = NA,
+                              lambda = NA) %>%
+    filter(nguesses <= C)
+}
 
 
-write_csv(join_props, here(glue("cached_data/joint{args[1]}.csv")))
+if(nrow(joint_params) > (rows - steps + 1)) {
+  end_slice <- min(rows, nrow(joint_params))
+  
+  join_props <- map_df((rows - steps + 1):end_slice, 
+                       ~joint_samples(mode = joint_params %>% slice(.x) %>% pull(model),
+                                      p = joint_params %>% slice(.x) %>% pull(p), 
+                                      C = joint_params %>% slice(.x) %>% pull(C),
+                                      M = joint_params %>% slice(.x) %>% pull(M),
+                                      nguesses = joint_params %>% slice(.x) %>%
+                                        pull(nguesses),
+                                      P = joint_params %>% slice(.x) %>% pull(P),
+                                      S = joint_params %>% slice(.x) %>% pull(S),
+                                      alpha = joint_params %>% slice(.x) %>% 
+                                        pull(alpha),
+                                      lambda = joint_params %>% slice(.x) %>% 
+                                        pull(lambda)))
+  
+  
+  write_csv(join_props, here(glue("cached_data/joint_sim_splits/{model}/joint{rows}.csv")))
+}
+
