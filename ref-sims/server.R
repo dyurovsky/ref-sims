@@ -24,12 +24,12 @@ if(LOCAL) {
 
   
 } else{
-  teach_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_talk_props.feather")
+  teach_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_teach_props.feather")
   
-  com_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_communicate_props.feather") %>%
+  com_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_communicate_props.feather") %>%
     rename(gamma = lambda)
   
-  talk_props <- read_feather("https://raw.githubusercontent.com/dyurovsky/ref-sims/master/cached_data/joint_talk_props.feather")
+  talk_props <- read_feather("https://github.com/dyurovsky/ref-sims/raw/master/cached_data/joint_talk_props.feather")
 }
 
 com_params <- com_props %>%
